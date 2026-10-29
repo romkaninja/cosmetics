@@ -1,0 +1,61 @@
+name: cosmetic-orders
+
+services:
+  db:
+    image: mysql:8.4
+    pull_policy: if_not_present
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: lab_orders
+      MYSQL_USER: lab
+      MYSQL_PASSWORD: lab
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - db_data:/var/lib/mysql
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./sql/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql:ro
+    healthcheck:
+      test: ["CMD", "mysql", "-h", "127.0.0.1", "-ulab", "-plab", "-D", "lab_orders", "-e", "SELECT brand_id FROM Brand LIMIT 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 20s
+    ports:
+      - "3306:3306"
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    environment:
+      DB_HOST: db
+      DB_PORT: "3306"
+      DB_NAME: lab_orders
+      DB_USER: lab
+      DB_PASSWORD: lab
+    volumes:
+      - ./api:/var/www/html
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"http://127.0.0.1/api/health\")===false?1:0);'"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 5s
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+    ports:
+      - "8080:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  db_data:
